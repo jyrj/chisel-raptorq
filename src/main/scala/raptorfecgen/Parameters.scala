@@ -2,7 +2,6 @@ package raptorfecgen
 
 import chisel3._
 
-// Initial Parameters based on the proposal [cite: 4, 5]
 case class RaptorFECParameters(
     // Codec Geometry
     sourceK: Int = 223,         // Number of source symbols for RS(255,223) [cite: 5]

@@ -1,10 +1,5 @@
 package raptorfecgen
 
-// Placeholder for a Scala model of RS+LT encoding/decoding
-// This model would implement the same logic as the Chisel components
-// but in Scala, for verification and generating golden vectors. [cite: 5]
-// It might interface with a C library like OpenRQ initially.
-
 object ScalaRSLTModel {
 
   def gf256Multiply(a: Int, b: Int): Int = {

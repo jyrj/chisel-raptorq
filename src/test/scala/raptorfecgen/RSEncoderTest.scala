@@ -4,51 +4,51 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
+private object ReferenceRS {
+  import RSEncoder.genCoeffs
+
+  private def mul(a: Int, b: Int): Int = ScalaRSLTModel.gf256Multiply(a, b)
+
+  /** Returns K+32 symbols (K source followed by 32 parity). */
+  def encode(src: Seq[Int]): Seq[Int] = {
+    require(src.length == 223)
+    val parity = Array.fill(32)(0)
+    for (byte <- src) {
+      val fb = byte ^ parity(31)
+      for (i <- 31 until 0 by -1)
+        parity(i) = parity(i-1) ^ mul(fb, genCoeffs(31 - i))
+      parity(0) = mul(fb, genCoeffs.last)
+    }
+    src ++ parity.reverse
+  }
+}
+
 class RSEncoderTest extends AnyFlatSpec with ChiselScalatestTester {
   behavior of "RSEncoder"
 
-  // Using default params: sourceK=223, totalSymbolsRS=255, symbolBits=8
-  val params = RaptorFECParameters()
+  val p = RaptorFECParameters() // defaults to RS(255,223)
 
-  it should "instantiate and pass basic data through (placeholder test)" in {
-    test(new RSEncoder(params)) { dut =>
-      dut.io.in.valid.poke(false.B)
-      dut.io.out.ready.poke(true.B)
-      dut.clock.step(5) // Wait a bit
+  it should "match the Scala reference model for random blocks" in {
+    test(new RSEncoder(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      for (trial <- 0 until 10) {
+        val srcData = Seq.fill(p.sourceK)(scala.util.Random.nextInt(256))
+        val golden  = ReferenceRS.encode(srcData)
 
-      // Prepare input data (K symbols)
-      val sourceData = Seq.tabulate(params.sourceK)(i => (i % 256).U(params.symbolBits.W))
-      
-      dut.io.in.valid.poke(true.B)
-      dut.io.in.bits.zip(sourceData).foreach { case (port, data) => port.poke(data) }
-      
-      // Wait for ready to go low
-      while(dut.io.in.ready.peek().litToBoolean){
-          dut.clock.step(1)
+        dut.io.in.valid.poke(true.B)
+        dut.io.in.bits.zip(srcData).foreach { case (port, v) => port.poke(v.U) }
+        while (!dut.io.in.ready.peek().litToBoolean) { dut.clock.step() }
+        dut.clock.step()                           // capture
+        dut.io.in.valid.poke(false.B)
+
+        while (!dut.io.out.valid.peek().litToBoolean) { dut.clock.step() }
+
+        for (i <- 0 until p.totalSymbolsRS) {
+          dut.io.out.bits(i).expect(golden(i).U, s"symbol $i mismatch on trial $trial")
+        }
+
+        dut.io.out.ready.poke(true.B); dut.clock.step()
+        dut.io.out.ready.poke(false.B)
       }
-      dut.io.in.valid.poke(false.B) // Deassert valid after accepted
-
-      // Wait for output to be valid
-      while(!dut.io.out.valid.peek().litToBoolean) {
-        dut.clock.step(1)
-      }
-
-      // Check output (N symbols)
-      // For now, just checks if the source part is copied correctly by the placeholder
-      for (i <- 0 until params.sourceK) {
-        dut.io.out.bits(i).expect(sourceData(i), s"Source symbol $i did not match")
-      }
-      // Parity symbols will be whatever the placeholder generates
-      println(s"Placeholder RS Encoder output parity (first): ${dut.io.out.bits(params.sourceK).peek().litValue}")
-
-      // Consume the output
-      dut.io.out.ready.poke(true.B)
-      dut.clock.step(1)
-      // The previous poke to dut.io.out.valid was illegal and has been removed.
-      
-      // After consumption, the DUT should be ready for new input.
-      dut.io.out.ready.poke(false.B) // Stop consuming.
-      dut.io.in.ready.expect(true.B)
     }
   }
 }

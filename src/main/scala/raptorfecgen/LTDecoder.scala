@@ -19,7 +19,7 @@ class LTDecoder(p: RaptorFECParameters) extends Module {
 
   // Placeholder for LT Decoder logic
   // Involves building a bipartite graph (or matrix) and solving via Gaussian elimination or belief propagation.
-  // Collects symbols until K unique source symbols can be decoded. [cite: 2]
+  // Collects symbols until K unique source symbols can be decoded.
 
   val recovered_block_reg = Reg(Vec(p.sourceK, UInt(p.symbolBits.W)))
   val num_recovered_internally = RegInit(0.U(log2Ceil(p.sourceK + 1).W))
