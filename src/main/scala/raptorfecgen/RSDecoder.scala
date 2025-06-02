@@ -5,54 +5,77 @@ import chisel3.util._
 
 class RSDecoder(p: RaptorFECParameters) extends Module {
   val io = IO(new Bundle {
-    // Input N symbols (could have erasures/errors)
     val in = Flipped(Decoupled(Vec(p.totalSymbolsRS, UInt(p.symbolBits.W))))
-    val erasures = Input(Vec(p.totalSymbolsRS, Bool())) // Erasure locations (optional for MVP)
-    // Output K recovered source symbols
+    val erasures = Input(Vec(p.totalSymbolsRS, Bool()))
     val out = Decoupled(Vec(p.sourceK, UInt(p.symbolBits.W)))
-    val error = Output(Bool()) // Indicates unrecoverable error
+    val error = Output(Bool())
   })
 
-  val busy = RegInit(false.B)
-  val output_buffer = Reg(Vec(p.sourceK, UInt(p.symbolBits.W)))
-  val output_valid = RegInit(false.B)
-  val error_reg = RegInit(false.B)
+  // === Internal States ===
+  val s_idle :: s_calc_syndromes :: s_find_errors :: s_correct_errors :: s_done :: Nil = Enum(5)
+  val state = RegInit(s_idle)
 
-  io.in.ready := !busy && !output_valid
+  // === Registers ===
+  val received_codeword = Reg(Vec(p.totalSymbolsRS, UInt(p.symbolBits.W)))
+  val syndromes = Reg(Vec(p.numParitySymbolsRS, UInt(p.symbolBits.W)))
+  val error_locations = Reg(Vec(p.numParitySymbolsRS, Bool()))
+  val corrected_symbols = Reg(Vec(p.sourceK, UInt(p.symbolBits.W)))
+  val processing_complete = RegInit(false.B)
+  val unrecoverable_error = RegInit(false.B)
 
-  when(io.in.valid && io.in.ready) {
-    busy := true.B
-    // Simulate processing: Assume input is correct for now or apply simple "correction"
-    // This is NOT a real RS decoder.
-    var can_recover = true.B // Placeholder
-    // Check erasures if any (simplified)
-    // val num_erasures = PopCount(io.erasures)
-    // if (num_erasures > p.numParitySymbolsRS) { can_recover = false.B }
+  // Default IO values
+  io.in.ready := (state === s_idle)
+  io.out.valid := (state === s_done) && processing_complete
+  io.out.bits := corrected_symbols
+  io.error := unrecoverable_error
 
-    when (can_recover) {
-        for (i <- 0 until p.sourceK) {
-          output_buffer(i) := io.in.bits(i) // Passthrough for now
-        }
-        error_reg := false.B
-    } .otherwise {
-        // Cannot recover, output garbage or signal error
-        for (i <- 0 until p.sourceK) {
-          output_buffer(i) := 0.U
-        }
-        error_reg := true.B
-    }
-    output_valid := true.B
+  // === Sub-Modules for GF(2^8) arithmetic ===
+  val syndrome_mults = Seq.fill(p.numParitySymbolsRS)(Module(new GF256Multiplier(p)))
+
+  syndrome_mults.foreach { m =>
+    m.io.a := 0.U
+    m.io.b := 0.U
   }
 
-  when(output_valid && io.out.ready) {
-    io.out.valid := true.B
-    io.out.bits := output_buffer
-    io.error := error_reg
-    output_valid := false.B
-    busy := false.B
-  } .otherwise {
-    io.out.valid := false.B
-    io.error := false.B // Default no error
-    io.out.bits := DontCare
+  val syndrome_accums = Reg(Vec(p.numParitySymbolsRS, UInt(p.symbolBits.W)))
+
+  // State Machine Logic
+  switch(state) {
+    is(s_idle) {
+      when(io.in.valid) {
+        received_codeword := io.in.bits
+        syndrome_accums.foreach(_ := 0.U)
+        state := s_calc_syndromes
+        unrecoverable_error := false.B
+        processing_complete := false.B
+      }
+    }
+    is(s_calc_syndromes) {
+      // Placeholder logic
+      val syndromes_non_zero = received_codeword.asUInt.orR
+      syndromes := VecInit(Seq.fill(p.numParitySymbolsRS)(Mux(syndromes_non_zero, 0xAA.U, 0.U)))
+      state := s_find_errors
+    }
+    is(s_find_errors) {
+      // Placeholder logic
+      val any_syndromes = syndromes.asUInt.orR
+      unrecoverable_error := false.B
+      error_locations.foreach(_ := false.B)
+      state := s_correct_errors
+    }
+    is(s_correct_errors) {
+      // Placeholder logic: just copy the received symbols
+      for (i <- 0 until p.sourceK) {
+        corrected_symbols(i) := received_codeword(i)
+      }
+      processing_complete := true.B
+      state := s_done
+    }
+    is(s_done) {
+      when(io.out.ready) {
+        state := s_idle
+        processing_complete := false.B
+      }
+    }
   }
 }
