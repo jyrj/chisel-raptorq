@@ -9,7 +9,7 @@ import chisel3.util._
   *
   * Pure logic: 8 × 8-bit XORs + steering; no table ROMs.
   */
-class GF256Multiplier(p: RaptorFECParameters) extends Module {
+class GF256Multiplier(val p: RaptorFECParameters) extends Module {
   require(p.symbolBits == 8, "GF256Multiplier only supports 8-bit symbols")
 
   val io = IO(new Bundle {

@@ -28,7 +28,7 @@ class PRNG(seed: Int) extends Module {
   * It uses a PRNG to select a set of source symbols, then XORs them together
   * to produce a single repair symbol.
   */
-class LTEncoder(p: RaptorFECParameters) extends Module {
+class LTEncoder(val p: RaptorFECParameters) extends Module {
   val io = IO(new Bundle {
     // Input K source symbols
     val sourceSymbols = Flipped(Decoupled(Vec(p.sourceK, UInt(p.symbolBits.W))))

@@ -3,7 +3,7 @@ package raptorfecgen
 import chisel3._
 import chisel3.util._
 
-class RSDecoder(p: RaptorFECParameters) extends Module {
+class RSDecoder(val p: RaptorFECParameters) extends Module {
   val io = IO(new Bundle {
     val in = Flipped(Decoupled(Vec(p.totalSymbolsRS, UInt(p.symbolBits.W))))
     val erasures = Input(Vec(p.totalSymbolsRS, Bool()))

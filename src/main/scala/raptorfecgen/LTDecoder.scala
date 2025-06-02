@@ -3,7 +3,7 @@ package raptorfecgen
 import chisel3._
 import chisel3.util._
 
-class LTDecoder(p: RaptorFECParameters) extends Module {
+class LTDecoder(val p: RaptorFECParameters) extends Module {
   val io = IO(new Bundle {
     val receivedSymbol = Flipped(Decoupled(UInt(p.symbolBits.W)))
     val symbolInfo = Input(Vec(p.sourceK, Bool()))

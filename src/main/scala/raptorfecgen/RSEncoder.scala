@@ -14,7 +14,7 @@ object RSEncoder {
   )
 }
 
-class RSEncoder(p: RaptorFECParameters) extends Module {
+class RSEncoder(val p: RaptorFECParameters) extends Module {
   require(p.symbolBits == 8, "encoder currently supports 8-bit symbols only")
   import RSEncoder._
 
