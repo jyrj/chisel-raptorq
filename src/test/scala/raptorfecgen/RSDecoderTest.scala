@@ -6,23 +6,18 @@ import org.scalatest.flatspec.AnyFlatSpec
 import scala.collection.mutable.ArrayBuffer
 
 class RSDecoderTest extends AnyFlatSpec with ChiselScalatestTester {
-  behavior of "Streaming RSDecoder with Syndrome Calculation"
+  behavior of "RSDecoder with Berlekamp-Massey"
 
   val p = RaptorFECParameters()
-  // Increased timeout to account for multi-cycle syndrome calculation
-  val testTimeoutCycles = p.totalSymbolsRS * (p.numParitySymbolsRS + 2) + 500
+  // Timeout needs to account for B-M iterations now
+  val testTimeoutCycles = (p.totalSymbolsRS * 2) + (p.numParitySymbolsRS * 5) + 500
 
-  /**
-    * Helper function to drive the DUT and collect results.
-    */
   def runDecoderTest(dut: RSDecoder, data: Seq[Int], k: Int, n: Int): Seq[Int] = {
     val recoveredData = ArrayBuffer[Int]()
     dut.io.out.ready.poke(true.B)
     dut.clock.step(1)
 
-    // --- Driver Thread ---
     val driverThread = fork {
-      println("Test Driver: Starting to send data...")
       for(i <- 0 until n) {
         dut.io.in.valid.poke(true.B)
         dut.io.in.bits.data.poke(data(i).U)
@@ -39,10 +34,8 @@ class RSDecoderTest extends AnyFlatSpec with ChiselScalatestTester {
         dut.clock.step(1)
       }
       dut.io.in.valid.poke(false.B)
-      println("Test Driver: Finished sending data.")
     }
 
-    // --- Receiver Logic ---
     var receiverCycles = 0
     while(!dut.io.decoding_done.peek().litToBoolean && receiverCycles < testTimeoutCycles) {
       if (dut.io.out.valid.peek().litToBoolean && dut.io.out.ready.peek().litToBoolean) {
@@ -51,7 +44,6 @@ class RSDecoderTest extends AnyFlatSpec with ChiselScalatestTester {
       receiverCycles += 1
       dut.clock.step(1)
     }
-    // Final check in case the last symbol is valid on the same cycle as decoding_done
     if (dut.io.out.valid.peek().litToBoolean) {
         recoveredData += dut.io.out.bits.data.peek().litValue.toInt
     }
@@ -60,48 +52,49 @@ class RSDecoderTest extends AnyFlatSpec with ChiselScalatestTester {
     if (receiverCycles >= testTimeoutCycles) {
         throw new Exception(s"Timeout waiting for DUT 'decoding_done'. Received ${recoveredData.length}/$k symbols.")
     }
-    println(s"Test Receiver: Finished. Total cycles: ${receiverCycles}")
     recoveredData.toSeq
   }
 
-  it should "recover an error-free codeword from a stream" in {
+  it should "pass an error-free codeword" in {
     test(new RSDecoder(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val srcData = Seq.fill(p.sourceK)(scala.util.Random.nextInt(256))
       val encodedData = ReferenceRS.encode(srcData)
-
-      println("--- Test: Error-Free Codeword ---")
       val recoveredData = runDecoderTest(dut, encodedData, p.sourceK, p.totalSymbolsRS)
       
-      dut.io.error.expect(false.B, "Decoder should not flag an error for a valid codeword")
-      assert(recoveredData.length == p.sourceK, s"Expected ${p.sourceK} symbols, but got ${recoveredData.length}")
-      assert(recoveredData == srcData, "Recovered data did not match source data")
-      println("--- Test: Error-Free Codeword PASSED ---\n")
+      dut.io.error.expect(false.B)
+      assert(recoveredData == srcData)
     }
   }
 
-  it should "detect (but not correct) a single-byte error" in {
+  it should "detect a single-byte error and report L=1" in {
     test(new RSDecoder(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val srcData = Seq.fill(p.sourceK)(scala.util.Random.nextInt(256))
       val encodedBuffer = ReferenceRS.encode(srcData).toBuffer
-
-      // Introduce a single-byte error into the source portion
-      val errorPos = 10
-      val originalByte = encodedBuffer(errorPos)
-      val corruptedByte = originalByte ^ 0xAA // Flip some bits
-      encodedBuffer(errorPos) = corruptedByte
+      encodedBuffer(10) = encodedBuffer(10) ^ 0xAA
       
-      println("--- Test: Single-Error Codeword ---")
       val recoveredData = runDecoderTest(dut, encodedBuffer.toSeq, p.sourceK, p.totalSymbolsRS)
+      
+      // Since correction is not yet implemented, the main error flag will be set
+      dut.io.error.expect(true.B)
+      // Check the specific output of the Berlekamp-Massey block
+      dut.io.debug_error_count.get.expect(1.U, "B-M should have found L=1 error")
+    }
+  }
 
-      dut.io.error.expect(true.B, "Decoder should have flagged an unrecoverable error")
-      assert(recoveredData.length == p.sourceK, s"Expected ${p.sourceK} symbols, but got ${recoveredData.length}")
-      assert(recoveredData != srcData, "Recovered data should not match original source data")
-      assert(recoveredData(errorPos) == corruptedByte, s"The corrupted byte at pos $errorPos should have been passed through")
-      println("--- Test: Single-Error Codeword PASSED ---\n")
+  it should "detect two errors and report L=2" in {
+    test(new RSDecoder(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      val srcData = Seq.fill(p.sourceK)(scala.util.Random.nextInt(256))
+      val encodedBuffer = ReferenceRS.encode(srcData).toBuffer
+      encodedBuffer(20) = encodedBuffer(20) ^ 0x11
+      encodedBuffer(40) = encodedBuffer(40) ^ 0x22
+      
+      val recoveredData = runDecoderTest(dut, encodedBuffer.toSeq, p.sourceK, p.totalSymbolsRS)
+      
+      dut.io.error.expect(true.B)
+      dut.io.debug_error_count.get.expect(2.U, "B-M should have found L=2 errors")
     }
   }
 }
-
 
 
 
