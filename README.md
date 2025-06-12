@@ -2,6 +2,8 @@
 
 This repository contains the final source code for `RAPTOR-FEC-GEN`, a Chisel-based generator for a streaming, RaptorQ-compatible Forward Error Correction (FEC) encoder and decoder. The project's goal is to create a configurable hardware IP block to protect real-time video streams from packet loss over IP networks. This implementation successfully builds and verifies a parameterized `RS(255,223)+LT` codec.
 
+**For detailed information on the project's architecture, implementation, and original proposal, please visit the [official project Wiki.](https://github.com/jyrj/chisel-raptorq/wiki)**
+
 ## Final Project Status
 
 The project successfully implements and verifies a complete RS+LT codec pipeline. It fulfills the core goals and introduces significant features from the original proposal's roadmap.
